@@ -28,7 +28,7 @@ from opensfm.actions.export_geocoords import _transform
 class OSFMContext:
     def __init__(self, opensfm_project_path):
         self.opensfm_project_path = opensfm_project_path
-    
+
     def run(self, command):
         osfm_bin = os.path.join(context.opensfm_path, 'bin', 'opensfm')
         system.run('"%s" %s "%s"' %
@@ -140,7 +140,7 @@ class OSFMContext:
                         has_gps = True
 
                     fout.write('%s\n' % os.path.join(images_path, photo.filename))
-            
+
             # check for image_groups.txt (split-merge)
             image_groups_file = os.path.join(args.project_path, "image_groups.txt")
             if 'split_image_groups_is_set' in args:
@@ -150,7 +150,7 @@ class OSFMContext:
                 dst_groups_file = os.path.join(self.opensfm_project_path, "image_groups.txt")
                 io.copy(image_groups_file, dst_groups_file)
                 log.ODM_INFO("Copied %s to %s" % (image_groups_file, dst_groups_file))
-        
+
             # check for cameras
             if args.cameras:
                 try:
@@ -166,13 +166,13 @@ class OSFMContext:
             for p in photos:
                 if p.mask is not None:
                     masks.append((p.filename, os.path.join(images_path, p.mask)))
-            
+
             if masks:
                 log.ODM_INFO("Found %s image masks" % len(masks))
                 with open(os.path.join(self.opensfm_project_path, "mask_list.txt"), 'w') as f:
                     for fname, mask in masks:
                         f.write("{} {}\n".format(fname, mask))
-            
+
             # Compute feature_process_size
             feature_process_size = 2048 # default
 
@@ -213,6 +213,7 @@ class OSFMContext:
                 "undistorted_image_format: tif",
                 "bundle_outlier_filtering_type: AUTO",
                 "sift_peak_threshold: 0.066",
+                "align_method: naive",
                 "align_orientation_prior: vertical",
                 "triangulation_type: ROBUST",
                 "retriangulation_ratio: 2",
@@ -240,7 +241,7 @@ class OSFMContext:
                 if feature_type != "HAHOG":
                     log.ODM_WARNING("Using BOW matching, will use HAHOG feature type, not SIFT")
                     feature_type = "HAHOG"
-            
+
             config.append("matcher_type: %s" % osfm_matchers[matcher_type])
 
             # GPU acceleration?
@@ -258,7 +259,7 @@ class OSFMContext:
                     log.ODM_INFO("Using GPU for extracting SIFT features")
                     feature_type = "SIFT_GPU"
                     self.gpu_sift_feature_extraction = True
-            
+
             config.append("feature_type: %s" % feature_type)
 
             if has_alt:
@@ -266,11 +267,11 @@ class OSFMContext:
                 config.append("use_altitude_tag: yes")
 
             gcp_path = reconstruction.gcp.gcp_path
-            if has_alt or gcp_path:
+            if gcp_path:
                 config.append("align_method: auto")
             else:
-                config.append("align_method: orientation_prior")
-            
+                config.append("align_method: naive")
+
             if args.use_hybrid_bundle_adjustment:
                 log.ODM_INFO("Enabling hybrid bundle adjustment")
                 config.append("bundle_interval: 100")          # Bundle after adding 'bundle_interval' cameras
@@ -278,13 +279,13 @@ class OSFMContext:
                 config.append("local_bundle_radius: 1")        # Max image graph distance for images to be included in local bundle adjustment
             else:
                 config.append("local_bundle_radius: 0")
-                
+
             if gcp_path:
                 config.append("bundle_use_gcp: yes")
                 if not args.force_gps:
                     config.append("bundle_use_gps: no")
                 io.copy(gcp_path, self.path("gcp_list.txt"))
-            
+
             config = config + append_config
 
             # write config file
@@ -292,7 +293,7 @@ class OSFMContext:
             config_filename = self.get_config_file_path()
             with open(config_filename, 'w') as fout:
                 fout.write("\n".join(config))
-            
+
             # We impose our own reference_lla
             if reconstruction.is_georeferenced():
                 self.write_reference_lla(reconstruction.georef.utm_east_offset, reconstruction.georef.utm_north_offset, reconstruction.georef.proj4())
@@ -305,7 +306,7 @@ class OSFMContext:
     def reconstructed(self):
         if not io.file_exists(self.path("reconstruction.json")):
             return False
-        
+
         with open(self.path("reconstruction.json"), 'r') as f:
             return f.readline().strip() != "[]"
 
@@ -313,19 +314,19 @@ class OSFMContext:
         metadata_dir = self.path("exif")
         if not io.dir_exists(metadata_dir) or rerun:
             self.run('extract_metadata')
-    
+
     def photos_to_metadata(self, photos, rerun=False):
         metadata_dir = self.path("exif")
 
         if io.dir_exists(metadata_dir) and not rerun:
             log.ODM_WARNING("%s already exists, not rerunning photo to metadata" % metadata_dir)
             return
-        
+
         if io.dir_exists(metadata_dir):
             shutil.rmtree(metadata_dir)
-        
+
         os.makedirs(metadata_dir, exist_ok=True)
-        
+
         camera_models = {}
         data = DataSet(self.opensfm_project_path)
 
@@ -360,7 +361,7 @@ class OSFMContext:
     def feature_matching(self, rerun=False):
         features_dir = self.path("features")
         matches_dir = self.path("matches")
-        
+
         if not io.dir_exists(features_dir) or rerun:
             try:
                 self.run('detect_features')
@@ -414,7 +415,7 @@ class OSFMContext:
                 log.ODM_WARNING("Cannot export cameras to %s. %s." % (output, str(e)))
         else:
             log.ODM_INFO("Already extracted cameras")
-    
+
     def convert_and_undistort(self, rerun=False, imageFilter=None, image_list=None, runId="nominal"):
         log.ODM_INFO("Undistorting %s ..." % self.opensfm_project_path)
         done_flag_file = self.path("undistorted", "%s_done.txt" % runId)
@@ -425,9 +426,9 @@ class OSFMContext:
             if image_list is not None:
                 ds._set_image_list(image_list)
 
-            undistort.run_dataset(ds, "reconstruction.json", 
+            undistort.run_dataset(ds, "reconstruction.json",
                                   0, None, "undistorted", imageFilter)
-            
+
             self.touch(done_flag_file)
         else:
             log.ODM_WARNING("Already undistorted (%s)" % runId)
@@ -444,13 +445,13 @@ class OSFMContext:
     def backup_reconstruction(self):
         if os.path.exists(self.recon_backup_file()):
             os.remove(self.recon_backup_file())
-            
+
         log.ODM_INFO("Backing up reconstruction")
         shutil.copyfile(self.recon_file(), self.recon_backup_file())
 
     def recon_backup_file(self):
         return self.path("reconstruction.backup.json")
-    
+
     def recon_file(self):
         return self.path("reconstruction.json")
 
@@ -462,7 +463,7 @@ class OSFMContext:
         for recon in reconstruction:
             shots = recon['shots']
             sids = list(shots)
-            
+
             for shot_id in sids:
                 secondary_photos = p2s.get(shot_id)
                 if secondary_photos is None:
@@ -510,14 +511,14 @@ class OSFMContext:
             pdf_report = report.Report(data, odm_stats)
             pdf_report.generate_report()
             pdf_report.save_report("report.pdf")
-            
+
             if os.path.exists(osfm_report_path):
                 shutil.move(osfm_report_path, report_path)
             else:
                 log.ODM_WARNING("Report could not be generated")
         else:
             log.ODM_WARNING("Report %s already exported" % report_path)
-    
+
     def write_reference_lla(self, offset_x, offset_y, proj4):
         reference_lla = self.path("reference_lla.json")
 
@@ -530,7 +531,7 @@ class OSFMContext:
                 'longitude': lon,
                 'altitude': 0.0
             }, indent=4))
-        
+
         log.ODM_INFO("Wrote reference_lla.json")
 
     def ground_control_points(self, proj4):
@@ -541,7 +542,7 @@ class OSFMContext:
 
         if not io.file_exists(gcp_stats_file):
             return []
-        
+
         gcps_stats = {}
         try:
             with open(gcp_stats_file) as f:
@@ -551,7 +552,7 @@ class OSFMContext:
 
         if not gcps_stats:
             return []
-        
+
         ds = DataSet(self.opensfm_project_path)
         reference = ds.load_reference()
         projection = pyproj.Proj(proj4)
@@ -567,7 +568,7 @@ class OSFMContext:
             })
 
         return result
-    
+
 
     def name(self):
         return os.path.basename(os.path.abspath(self.path("..")))
@@ -579,7 +580,7 @@ def get_submodel_argv(args, submodels_path = None, submodel_name = None):
     handles the <project name> value and --project-path detection / override.
     When all arguments are set to None, --project-path and project name are always removed.
 
-    :return the same as argv, but removing references to --split, 
+    :return the same as argv, but removing references to --split,
         setting/replacing --project-path and name
         removing --rerun-from, --rerun, --rerun-all, --sm-cluster
         removing --pc-las, --pc-csv, --pc-ept, --tiles flags (processing these is wasteful)
@@ -605,7 +606,7 @@ def get_submodel_argv(args, submodels_path = None, submodel_name = None):
         startup_script_dir = os.path.dirname(startup_script)
         startup_script = os.path.join(startup_script_dir, "run")
 
-    result = [startup_script] 
+    result = [startup_script]
 
     args_dict = vars(args).copy()
     set_keys = [k[:-len("_is_set")] for k in args_dict.keys() if k.endswith("_is_set")]
@@ -627,7 +628,7 @@ def get_submodel_argv(args, submodels_path = None, submodel_name = None):
         if not k in set_keys:
             set_keys.append(k)
             args_dict[k] = True
-    
+
     # Read JSON always
     for k in read_json_always:
         if k in set_keys:
@@ -649,13 +650,13 @@ def get_submodel_argv(args, submodels_path = None, submodel_name = None):
     # Populate result
     for k in set_keys:
         result.append("--%s" % k.replace("_", "-"))
-        
+
         # No second value for booleans
         if isinstance(args_dict[k], bool) and args_dict[k] == True:
             continue
-        
+
         result.append(str(args_dict[k]))
-    
+
     if submodels_path:
         result.append("--project-path")
         result.append(submodels_path)
@@ -697,7 +698,7 @@ def get_submodel_paths(submodels_path, *paths):
 
     for f in os.listdir(submodels_path):
         if f.startswith('submodel'):
-            p = os.path.join(submodels_path, f, *paths) 
+            p = os.path.join(submodels_path, f, *paths)
             if os.path.exists(p):
                 result.append(p)
             else:
@@ -723,7 +724,7 @@ def get_all_submodel_paths(submodels_path, *all_paths):
             all_found = True
 
             for ap in all_paths:
-                p = os.path.join(submodels_path, f, ap) 
+                p = os.path.join(submodels_path, f, ap)
                 if not os.path.exists(p):
                     log.ODM_WARNING("Missing %s from submodel %s" % (p, f))
                     all_found = False
